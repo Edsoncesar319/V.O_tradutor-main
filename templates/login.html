@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Entrar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        (function () {
+            if (!location.port) return;
+            if (location.port === "5000") return;
+            if (location.hostname !== "127.0.0.1" && location.hostname !== "localhost") return;
+            location.replace(location.protocol + "//" + location.hostname + ":5000/login");
+        })();
+    </script>
+</head>
+<body>
+    <main class="md-login-page" role="main">
+        <section class="md-login-card" aria-label="Entrar">
+            <div class="md-login-icon-wrap" aria-hidden="true">
+                <span class="material-symbols-outlined">account_circle</span>
+            </div>
+
+            <h1 class="md-login-title">Voice AI Chat</h1>
+            <p class="md-login-subtitle">Entre para usar tradução em tempo real com voz</p>
+
+            <form class="md-login-form" method="post" action="/login">
+                <div class="md-login-input">
+                    <span class="material-symbols-outlined" aria-hidden="true">person</span>
+                    <input id="username" name="username" type="text" autocomplete="username" placeholder="Usuário" required>
+                </div>
+
+                <div class="md-login-input">
+                    <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+                    <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Senha" required>
+                </div>
+
+                <div class="md-login-row">
+                    <label class="md-login-check">
+                        <input type="checkbox" name="remember_me" />
+                        <span>Lembrar-me</span>
+                    </label>
+                    <a class="md-login-link-muted" href="/register">Esqueci minha senha</a>
+                </div>
+
+                {% if error %}
+                    <p class="md-auth-error">{{ error }}</p>
+                {% endif %}
+
+                <button type="submit" class="md-login-cta">LOGIN</button>
+            </form>
+
+            <p class="md-login-register">
+                ou <a class="md-auth-link" href="/register">Criar cadastro</a>
+            </p>
+        </section>
+    </main>
+</body>
+</html>
+

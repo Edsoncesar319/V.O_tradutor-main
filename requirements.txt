@@ -1,0 +1,10 @@
+Flask
+Flask-SocketIO
+openai-whisper
+gTTS
+edge-tts
+deep-translator
+pydub
+# Needed for Engine.IO threading + wsproto (avoid h11<0.10 from old deps)
+h11>=0.14
+httpx>=0.27

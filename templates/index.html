@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>V.O tradutor Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        (function () {
+            if (!location.port) return;
+            if (location.port === "5000") return;
+            if (location.hostname !== "127.0.0.1" && location.hostname !== "localhost") return;
+            location.replace(location.protocol + "//" + location.hostname + ":5000/");
+        })();
+    </script>
+    <!-- Live Server (:5500): app.js usa automaticamente a API em :5000. Outra porta: <script>window.__VOICEOVER_API__='http://127.0.0.1:PORT';</script> -->
+</head>
+<body>
+    <div class="md-scaffold">
+        <header class="md-top-app-bar" role="banner">
+            <div class="md-top-app-bar__toolbar">
+                <span class="material-symbols-outlined md-top-app-bar__leading" aria-hidden="true">graphic_eq</span>
+                <div class="md-top-app-bar__titles">
+                    <h1 class="md-top-app-bar__headline">Voice AI Chat</h1>
+                    <p class="md-top-app-bar__sub">Tradução em tempo real · EN · ES · FR · PT</p>
+                </div>
+                <div class="md-top-app-bar__actions" aria-label="Conta">
+                    <a class="md-top-app-bar__action-link" href="/account">Conta</a>
+                    <a class="md-top-app-bar__action-link" href="/logout">Sair</a>
+                </div>
+            </div>
+        </header>
+
+        <main class="md-main" role="main">
+            <section class="md-panel" aria-label="Entrada">
+                <div class="md-text-field md-text-field--filled">
+                    <label class="md-text-field__label" for="username">Nome</label>
+                    <input id="username" type="text" name="username" value="{{ username }}" readonly autocomplete="nickname">
+                </div>
+
+                <div class="md-output-lang" id="outputLangGroup">
+                    <span class="md-output-lang__label" id="outputLangLabel">Idioma de saída da tradução</span>
+                    <div class="md-chip-row" role="radiogroup" aria-labelledby="outputLangLabel">
+                        <button type="button" class="md-filter-chip is-selected" data-value="all" aria-pressed="true">Todas</button>
+                        <button type="button" class="md-filter-chip" data-value="en" aria-pressed="false">EN</button>
+                        <button type="button" class="md-filter-chip" data-value="es" aria-pressed="false">ES</button>
+                        <button type="button" class="md-filter-chip" data-value="fr" aria-pressed="false">FR</button>
+                        <button type="button" class="md-filter-chip" data-value="pt" aria-pressed="false">PT</button>
+                    </div>
+                </div>
+
+                <div class="md-text-field md-text-field--filled md-text-field--select md-tts-voice-field">
+                    <label class="md-text-field__label" for="ttsVoiceSelect">Voz da tradução (TTS)</label>
+                    <select id="ttsVoiceSelect" name="tts_voice" aria-describedby="ttsVoiceHelp">
+                        <option value="">Carregando vozes…</option>
+                    </select>
+                    <p class="md-tts-voice-help" id="ttsVoiceHelp">
+                        Microsoft Edge TTS: a voz vale para o idioma correspondente (ex.: voz em inglês só no áudio EN).
+                        “Automático” usa uma voz neural padrão por idioma.
+                    </p>
+                </div>
+
+            </section>
+
+            <section class="md-card md-card--elevated md-voice-capture-card" aria-label="Captura de voz">
+                <div class="md-card__header">
+                    <span class="material-symbols-outlined md-card__icon" aria-hidden="true">mic</span>
+                    <h2 class="md-card__title">Captura de voz</h2>
+                </div>
+                <div class="md-voice-capture">
+                    <p class="md-voice-capture__hint">
+                        Grave sua fala, ouça a prévia e envie para tradução. A resposta usa o áudio da tradução (TTS); opcionalmente sua voz toca antes.
+                    </p>
+                    <div class="md-voice-meter-wrap" id="voiceMeterWrap" aria-hidden="true">
+                        <div class="md-voice-meter">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
+                    <div class="md-voice-timer" id="voiceTimer" aria-live="polite">00:00</div>
+                    <div class="md-voice-actions">
+                        <button type="button" class="md-filled-button" id="btnRecStart" title="Iniciar gravação">
+                            <span class="material-symbols-outlined" aria-hidden="true">fiber_manual_record</span>
+                            <span class="md-filled-button__label">Gravar</span>
+                        </button>
+                        <button type="button" class="md-filled-button md-tonal-button" id="btnRecStop" disabled title="Parar gravação">
+                            <span class="material-symbols-outlined" aria-hidden="true">stop</span>
+                            <span class="md-filled-button__label">Parar</span>
+                        </button>
+                        <button type="button" class="md-tonal-button-outline" id="btnRecListen" disabled title="Ouvir gravação">
+                            <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
+                            Ouvir
+                        </button>
+                        <button type="button" class="md-filled-button" id="btnRecSend" disabled title="Enviar para tradução">
+                            <span class="material-symbols-outlined" aria-hidden="true">translate</span>
+                            <span class="md-filled-button__label">Enviar tradução</span>
+                        </button>
+                    </div>
+                    <label class="md-checkbox-label">
+                        <input type="checkbox" id="chkPlayOriginalFirst" checked />
+                        <span>Reproduzir minha voz captada antes do áudio da tradução</span>
+                    </label>
+                </div>
+            </section>
+
+            <p class="md-hint" id="statusHint" role="status" aria-live="polite"></p>
+
+            <section class="md-card md-card--elevated md-transcript-card" aria-label="Transcrição">
+                <div class="md-card__header">
+                    <span class="material-symbols-outlined md-card__icon" aria-hidden="true">subtitles</span>
+                    <h2 class="md-card__title">Transcrição do microfone</h2>
+                </div>
+                <div class="md-transcript-body">
+                    <div class="md-transcript-block">
+                        <div class="md-transcript-caption">Ao vivo (navegador)</div>
+                        <div id="transcriptLive" class="md-transcript-text md-transcript-text--live" aria-live="polite"></div>
+                        <p id="transcriptUnsupported" class="md-transcript-footnote" hidden>
+                            Transcrição ao vivo indisponível neste navegador. Use Chrome ou Edge, ou aguarde o texto do servidor abaixo.
+                        </p>
+                    </div>
+                    <div class="md-transcript-block">
+                        <div class="md-transcript-caption">Whisper (servidor)</div>
+                        <div id="transcriptWhisper" class="md-transcript-text md-transcript-text--server">—</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="md-card md-card--elevated md-card--chat" aria-label="Mensagens">
+                <div class="md-card__header">
+                    <span class="material-symbols-outlined md-card__icon" aria-hidden="true">forum</span>
+                    <h2 class="md-card__title">Conversa</h2>
+                </div>
+                <div id="chat" class="md-chat"></div>
+                <div class="md-chat-composer">
+                    <div class="md-text-field md-text-field--filled md-text-field--multiline">
+                        <label class="md-text-field__label" for="messageInput">Mensagem</label>
+                        <textarea
+                            id="messageInput"
+                            name="message"
+                            rows="2"
+                            autocomplete="off"
+                            placeholder="Digite sua mensagem e envie (Enter) ou use Falar acima"
+                        ></textarea>
+                    </div>
+                    <button type="button" class="md-filled-button md-send-button" id="btnSendText" onclick="sendTextMessage()" title="Enviar">
+                        <span class="material-symbols-outlined" aria-hidden="true">send</span>
+                        <span class="md-filled-button__label">Enviar</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
