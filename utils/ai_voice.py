@@ -15,6 +15,7 @@ DEFAULT_EDGE_VOICES = {
     "es": "es-ES-ElviraNeural",
     "fr": "fr-FR-DeniseNeural",
     "pt": "pt-BR-FranciscaNeural",
+    "it": "it-IT-ElsaNeural",
 }
 
 _tts_voice_catalog = None
@@ -45,7 +46,7 @@ def _load_voice_catalog():
 def pick_edge_voice(target_lang, user_voice_id):
     """
     Escolhe o ShortName Edge-TTS.
-    Se user_voice_id for válido e o locale bater com target_lang (en/es/fr/pt), usa-o.
+    Se user_voice_id for valido e o locale bater com target_lang (en/es/fr/pt/it), usa-o.
     Caso contrário, voz neural padrão para aquele idioma.
     """
     lang = (target_lang or "en").lower().split("-")[0]
@@ -91,8 +92,8 @@ def text_to_speech(text, lang, tts_voice=None):
 
 
 def list_neural_voices_for_ui():
-    """Vozes neurais Edge para EN/ES/FR/PT (lista para o front)."""
-    allowed = frozenset({"en", "es", "fr", "pt"})
+    """Vozes neurais Edge para EN/ES/FR/PT/IT (lista para o front)."""
+    allowed = frozenset({"en", "es", "fr", "pt", "it"})
     out = []
     try:
         for v in _load_voice_catalog():

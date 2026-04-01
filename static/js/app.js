@@ -41,7 +41,7 @@ var socket = API_BASE
 
 var liveRecognition = null;
 
-var LANG_LABELS = { en: "EN", es: "ES", fr: "FR", pt: "PT" };
+var LANG_LABELS = { en: "EN", es: "ES", fr: "FR", pt: "PT", it: "IT" };
 
 var MAX_RECORD_MS = 120000;
 
@@ -493,7 +493,7 @@ function appendMessage(data) {
     var langs =
         data.output_langs && data.output_langs.length
             ? data.output_langs
-            : ["en", "es", "fr", "pt"];
+            : ["en", "es", "fr", "pt", "it"];
     for (var j = 0; j < langs.length; j++) {
         var code = langs[j];
         var lbl = LANG_LABELS[code] || String(code).toUpperCase();

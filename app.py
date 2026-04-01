@@ -34,11 +34,11 @@ def _cors_all(resp):
 
 DB = "database/chat.db"
 
-OUTPUT_LANGS = ("en", "es", "fr", "pt")
+OUTPUT_LANGS = ("en", "es", "fr", "pt", "it")
 
 
 def _resolve_output_langs(payload):
-    """'all' → as quatro línguas; caso contrário uma chave em OUTPUT_LANGS."""
+    """'all' -> todas as linguas configuradas; caso contrario uma chave em OUTPUT_LANGS."""
     if not payload:
         return list(OUTPUT_LANGS)
     v = str(payload.get("output_lang", "all")).strip().lower()
@@ -174,6 +174,7 @@ def login():
         return redirect(url_for("index"))
 
     error = ""
+    username = (request.args.get("username") or "").strip()
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
@@ -188,7 +189,7 @@ def login():
             session["username"] = user["username"]
             return redirect(url_for("index"))
 
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=error, username=username)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -216,7 +217,7 @@ def register():
             )
             conn.commit()
             conn.close()
-            return redirect(url_for("login"))
+            return redirect(url_for("login", username=username))
 
     return render_template("register.html", error=error)
 
@@ -294,7 +295,7 @@ def account():
 
 @app.route("/api/tts-voices")
 def api_tts_voices():
-    """Vozes neurais Edge-TTS (EN/ES/FR/PT) para o seletor do front."""
+    """Vozes neurais Edge-TTS (EN/ES/FR/PT/IT) para o seletor do front."""
     return jsonify({"voices": list_neural_voices_for_ui()})
 
 

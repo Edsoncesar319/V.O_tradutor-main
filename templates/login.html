@@ -31,7 +31,7 @@
             <form class="md-login-form" method="post" action="/login">
                 <div class="md-login-input">
                     <span class="material-symbols-outlined" aria-hidden="true">person</span>
-                    <input id="username" name="username" type="text" autocomplete="username" placeholder="Usuário" required>
+                    <input id="username" name="username" type="text" autocomplete="username" placeholder="Usuário" value="{{ username or '' }}" required>
                 </div>
 
                 <div class="md-login-input">

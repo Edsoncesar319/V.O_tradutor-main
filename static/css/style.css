@@ -1,21 +1,21 @@
 /* Material Design 3 — tema escuro (tokens aproximados) */
 :root {
-    --md-sys-color-primary: #d0bcff;
-    --md-sys-color-on-primary: #381e72;
-    --md-sys-color-primary-container: #4f378b;
-    --md-sys-color-on-primary-container: #eaddff;
-    --md-sys-color-surface: #1c1b1f;
-    --md-sys-color-surface-container-low: #1c1b1f;
-    --md-sys-color-surface-container: #211f26;
-    --md-sys-color-surface-container-high: #2b2930;
-    --md-sys-color-surface-container-highest: #36343b;
-    --md-sys-color-on-surface: #e6e1e5;
-    --md-sys-color-on-surface-variant: #cac4d0;
-    --md-sys-color-outline: #938f99;
-    --md-sys-color-outline-variant: #49454f;
+    --md-sys-color-primary: #20d1f2;
+    --md-sys-color-on-primary: #ecf7ff;
+    --md-sys-color-primary-container: #168ee3;
+    --md-sys-color-on-primary-container: #ecf7ff;
+    --md-sys-color-surface: #072e61;
+    --md-sys-color-surface-container-low: #0a3f80;
+    --md-sys-color-surface-container: #0c4e9d;
+    --md-sys-color-surface-container-high: #1360b8;
+    --md-sys-color-surface-container-highest: #1670cf;
+    --md-sys-color-on-surface: #ecf7ff;
+    --md-sys-color-on-surface-variant: #cfe9ff;
+    --md-sys-color-outline: #8cc8f4;
+    --md-sys-color-outline-variant: #2f7fc7;
     --md-sys-color-error: #f2b8b5;
     --md-sys-color-on-error: #601410;
-    --md-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+    --md-elevation-1: 0 1px 2px rgba(7, 4, 211, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
     --md-elevation-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
     --md-shape-corner-extra-small: 4px;
     --md-shape-corner-medium: 12px;
@@ -694,9 +694,9 @@ body {
 .md-auth-page {
     flex: 1;
     background:
-        radial-gradient(1000px 480px at 12% 10%, rgba(208, 188, 255, 0.22), transparent 60%),
-        radial-gradient(900px 420px at 90% 0%, rgba(208, 188, 255, 0.12), transparent 55%),
-        linear-gradient(180deg, #0f172a, #0b1020);
+        radial-gradient(900px 420px at 18% 10%, rgba(45, 120, 255, 0.24), transparent 60%),
+        radial-gradient(800px 380px at 80% 90%, rgba(13, 152, 255, 0.15), transparent 60%),
+        linear-gradient(160deg, #042f66, #0a4b96 55%, #093a78);
 }
 
 .md-auth-main {
