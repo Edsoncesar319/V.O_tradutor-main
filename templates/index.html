@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260402b">
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
     <script>
         (function () {
@@ -30,6 +30,10 @@
                     <p class="md-top-app-bar__sub">Tradução em tempo real · EN · ES · FR · PT · IT</p>
                 </div>
                 <div class="md-top-app-bar__actions" aria-label="Conta">
+                    <span class="md-top-app-bar__user" title="Usuário">
+                        <span class="material-symbols-outlined" aria-hidden="true">account_circle</span>
+                        <span class="md-top-app-bar__user-name">{{ username }}</span>
+                    </span>
                     <a class="md-top-app-bar__action-link" href="/account">Conta</a>
                     <a class="md-top-app-bar__action-link" href="/logout">Sair</a>
                 </div>
@@ -38,10 +42,7 @@
 
         <main class="md-main" role="main">
             <section class="md-panel" aria-label="Entrada">
-                <div class="md-text-field md-text-field--filled">
-                    <label class="md-text-field__label" for="username">Nome</label>
-                    <input id="username" type="text" name="username" value="{{ username }}" readonly autocomplete="nickname">
-                </div>
+                <input id="username" type="hidden" name="username" value="{{ username }}" autocomplete="nickname">
 
                 <div class="md-output-lang" id="outputLangGroup">
                     <span class="md-output-lang__label" id="outputLangLabel">Idioma de saída da tradução</span>
@@ -63,7 +64,33 @@
                     <p class="md-tts-voice-help" id="ttsVoiceHelp">
                         Microsoft Edge TTS: a voz vale para o idioma correspondente (ex.: voz em inglês só no áudio EN).
                         “Automático” usa uma voz neural padrão por idioma.
+                        “Starke+Edson” e “Starke+voz+02” usam presets de vozes neurais por idioma; seus arquivos <code>.mp3</code> em <code>voices/</code> servem para pré-escuta.
                     </p>
+                    <div class="md-tts-voice-preview">
+                        <button type="button" class="md-tonal-button-outline" id="btnTtsVoicePreview" title="Pré-escutar voz selecionada">
+                            <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
+                            Pré-escutar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="md-tts-modulation" aria-label="Modulação da voz">
+                    <span class="md-output-lang__label" id="ttsModLabel">Modulação da voz (ritmo, tom, volume)</span>
+                    <div class="md-tts-modulation__row">
+                        <label class="md-tts-modulation__label" for="ttsRateRange">Ritmo (velocidade)</label>
+                        <input type="range" id="ttsRateRange" min="-50" max="100" value="0" step="1" aria-valuemin="-50" aria-valuemax="100" aria-valuenow="0" />
+                        <span class="md-tts-modulation__value" id="ttsRateRangeVal" aria-live="polite">0%</span>
+                    </div>
+                    <div class="md-tts-modulation__row">
+                        <label class="md-tts-modulation__label" for="ttsPitchRange">Tom (entonação)</label>
+                        <input type="range" id="ttsPitchRange" min="-50" max="50" value="0" step="1" aria-valuemin="-50" aria-valuemax="50" aria-valuenow="0" />
+                        <span class="md-tts-modulation__value" id="ttsPitchRangeVal" aria-live="polite">0 Hz</span>
+                    </div>
+                    <div class="md-tts-modulation__row">
+                        <label class="md-tts-modulation__label" for="ttsVolumeRange">Volume</label>
+                        <input type="range" id="ttsVolumeRange" min="-50" max="50" value="0" step="1" aria-valuemin="-50" aria-valuemax="50" aria-valuenow="0" />
+                        <span class="md-tts-modulation__value" id="ttsVolumeRangeVal" aria-live="polite">0%</span>
+                    </div>
                 </div>
 
             </section>
@@ -134,6 +161,12 @@
                 <div class="md-card__header">
                     <span class="material-symbols-outlined md-card__icon" aria-hidden="true">forum</span>
                     <h2 class="md-card__title">Conversa</h2>
+                    <button type="button" class="md-card__header-action" id="btnStopAudio" title="Parar áudio da tradução">
+                        Parar áudio
+                    </button>
+                    <button type="button" class="md-card__header-action" id="btnClearChat" title="Limpar conversa">
+                        Limpar
+                    </button>
                 </div>
                 <div id="chat" class="md-chat"></div>
                 <div class="md-chat-composer">
@@ -155,6 +188,6 @@
             </section>
         </main>
     </div>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=20260402c"></script>
 </body>
 </html>

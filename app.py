@@ -1,8 +1,19 @@
 import base64
+import json
 import os
 from datetime import timedelta
 
-from flask import Flask, jsonify, render_template, request, redirect, session, url_for
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
 from flask_socketio import SocketIO, emit
 import sqlite3
 
@@ -11,6 +22,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from utils.ai_voice import (
     clean_spoken_text,
+    format_edge_tts_modulation,
     list_neural_voices_for_ui,
     speech_to_text,
     text_to_speech,
@@ -33,6 +45,8 @@ def _cors_all(resp):
     return resp
 
 DB = "database/chat.db"
+VOICES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
+ALLOWED_VOICE_ASSETS = frozenset({"Starke+Edson.mp3", "Starke+voz+02.mp3"})
 
 OUTPUT_LANGS = ("en", "es", "fr", "pt", "it")
 
@@ -54,6 +68,44 @@ def _parse_tts_voice(payload):
         return None
     vid = str(payload.get("tts_voice") or "").strip()
     return vid or None
+
+
+def _normalize_socket_payload(data):
+    """Socket.IO pode enviar None, string JSON ou dict conforme cliente/versao."""
+    if data is None:
+        return {}
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    return {}
+
+
+def _parse_tts_modulation(payload):
+    if not payload or not isinstance(payload, dict):
+        return format_edge_tts_modulation(0, 0, 0)
+
+    def clip_num(key, default, lo, hi):
+        if key not in payload:
+            return default
+        try:
+            raw = payload.get(key)
+            if raw is None or raw == "":
+                return default
+            v = float(str(raw).strip().replace(",", "."))
+            return max(lo, min(hi, v))
+        except (TypeError, ValueError):
+            return default
+
+    return format_edge_tts_modulation(
+        clip_num("tts_rate_percent", 0, -50, 100),
+        clip_num("tts_pitch_hz", 0, -50, 50),
+        clip_num("tts_volume_percent", 0, -50, 50),
+    )
 
 
 def init_db():
@@ -120,7 +172,15 @@ def login_required(fn):
     return wrapper
 
 
-def _broadcast_translation(username, text, output_langs=None, tts_voice=None):
+def _broadcast_translation(
+    username,
+    text,
+    output_langs=None,
+    tts_voice=None,
+    rate="+0%",
+    pitch="+0Hz",
+    volume="+0%",
+):
     """text já limpo e não vazio: traduz, TTS, grava DB e envia a todos."""
     languages = output_langs if output_langs else list(OUTPUT_LANGS)
     translations = {}
@@ -129,7 +189,7 @@ def _broadcast_translation(username, text, output_langs=None, tts_voice=None):
     for lang in languages:
         translated = translate_text(text, lang)
         translations[lang] = translated
-        audio_file = text_to_speech(translated, lang, tts_voice)
+        audio_file = text_to_speech(translated, lang, tts_voice, rate=rate, pitch=pitch, volume=volume)
         if not audio_file:
             continue
         with open(audio_file, "rb") as f:
@@ -299,8 +359,21 @@ def api_tts_voices():
     return jsonify({"voices": list_neural_voices_for_ui()})
 
 
+@app.route("/voices/<path:filename>")
+def serve_voice_asset(filename):
+    """Serve ficheiros de referência em voices/ (ex.: Starke+Edson.mp3)."""
+    base = os.path.basename(filename)
+    if base != filename or base not in ALLOWED_VOICE_ASSETS:
+        abort(404)
+    path = os.path.join(VOICES_DIR, base)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_from_directory(VOICES_DIR, base, mimetype="audio/mpeg")
+
+
 @socketio.on("text_message")
 def handle_text_message(data):
+    data = _normalize_socket_payload(data)
     user = current_user()
     if not user:
         emit(
@@ -328,11 +401,15 @@ def handle_text_message(data):
     )
 
     try:
+        r, p, vol = _parse_tts_modulation(data)
         _broadcast_translation(
             username,
             text,
             _resolve_output_langs(data),
             _parse_tts_voice(data),
+            r,
+            p,
+            vol,
         )
     except Exception as exc:
         emit(
@@ -344,6 +421,7 @@ def handle_text_message(data):
 
 @socketio.on("voice_message")
 def handle_voice(data):
+    data = _normalize_socket_payload(data)
     user = current_user()
     if not user:
         emit(
@@ -354,7 +432,14 @@ def handle_voice(data):
         return
 
     username = user["username"]
-    audio_base64 = data["audio"]
+    audio_base64 = data.get("audio")
+    if not audio_base64:
+        emit(
+            "transcription",
+            {"text": "", "error": "Áudio não enviado. Tente gravar novamente."},
+            to=request.sid,
+        )
+        return
     audio_bytes = base64.b64decode(audio_base64)
 
     # Browser MediaRecorder typically emits WebM/Opus; Whisper accepts this format.
@@ -365,6 +450,7 @@ def handle_voice(data):
     try:
         try:
             text = clean_spoken_text(speech_to_text(audio_path))
+            r, p, vol = _parse_tts_modulation(data)
 
             emit(
                 "transcription",
@@ -389,7 +475,7 @@ def handle_voice(data):
                 )
                 return
 
-            _broadcast_translation(username, text, out_langs, _parse_tts_voice(data))
+            _broadcast_translation(username, text, out_langs, _parse_tts_voice(data), r, p, vol)
         except Exception as exc:
             emit(
                 "transcription",
@@ -405,5 +491,6 @@ def handle_voice(data):
 
 if __name__ == "__main__":
     os.makedirs("database", exist_ok=True)
+    os.makedirs(VOICES_DIR, exist_ok=True)
     init_db()
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
