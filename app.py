@@ -30,7 +30,7 @@ from utils.ai_voice import (
 from utils.translator import translate_text
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "secret"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "secret")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 # threading: evita eventlet, que quebra no Python 3.13 (ssl.wrap_socket removido).
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
@@ -44,8 +44,10 @@ def _cors_all(resp):
     resp.headers.setdefault("Access-Control-Allow-Headers", "Content-Type")
     return resp
 
-DB = "database/chat.db"
+_DATA_ROOT = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.abspath(__file__))
+DB = os.path.join(_DATA_ROOT, "database", "chat.db")
 VOICES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
+TMP_DIR = _DATA_ROOT
 ALLOWED_VOICE_ASSETS = frozenset({"Starke+Edson.mp3", "Starke+voz+02.mp3"})
 
 OUTPUT_LANGS = ("en", "es", "fr", "pt", "it")
@@ -109,6 +111,7 @@ def _parse_tts_modulation(payload):
 
 
 def init_db():
+    os.makedirs(os.path.dirname(DB), exist_ok=True)
     conn = sqlite3.connect(DB)
     cursor = conn.cursor()
     cursor.execute(
@@ -443,7 +446,7 @@ def handle_voice(data):
     audio_bytes = base64.b64decode(audio_base64)
 
     # Browser MediaRecorder typically emits WebM/Opus; Whisper accepts this format.
-    audio_path = "temp_audio.webm"
+    audio_path = os.path.join(TMP_DIR, "temp_audio.webm")
     with open(audio_path, "wb") as f:
         f.write(audio_bytes)
 
@@ -489,8 +492,9 @@ def handle_voice(data):
             pass
 
 
+os.makedirs(os.path.dirname(DB), exist_ok=True)
+os.makedirs(VOICES_DIR, exist_ok=True)
+init_db()
+
 if __name__ == "__main__":
-    os.makedirs("database", exist_ok=True)
-    os.makedirs(VOICES_DIR, exist_ok=True)
-    init_db()
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)

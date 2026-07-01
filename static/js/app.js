@@ -456,7 +456,8 @@ async function beginVoiceCapture() {
             });
             voiceStream = null;
         }
-        stopLiveTranscription();
+        // Mantém o texto transcrito pelo navegador para envio em produção (Vercel).
+        setTimeout(stopLiveTranscription, 250);
 
         var blob = new Blob(voiceChunks, {
             type: voiceMediaRecorder && voiceMediaRecorder.mimeType ? voiceMediaRecorder.mimeType : "audio/webm",
@@ -516,6 +517,29 @@ function sendCapturedVoice() {
     if (!lastCapturedBlob) return;
     pendingVoiceResponse = true;
 
+    var liveEl = document.getElementById("transcriptLive");
+    var liveText = liveEl ? (liveEl.textContent || "").trim() : "";
+    var mod = getTtsModulationPayload();
+    var payload = {
+        username: document.getElementById("username")
+            ? document.getElementById("username").value
+            : "",
+        output_lang: getOutputLang(),
+        tts_voice: getTtsVoice(),
+        tts_rate_percent: mod.tts_rate_percent,
+        tts_pitch_hz: mod.tts_pitch_hz,
+        tts_volume_percent: mod.tts_volume_percent,
+    };
+
+    if (liveText && liveText !== "Processando…") {
+        setWhisperTranscript(liveText);
+        var hint = document.getElementById("statusHint");
+        if (hint) hint.textContent = "Enviando transcrição do navegador…";
+        payload.text = liveText;
+        socket.emit("text_message", payload);
+        return;
+    }
+
     var reader = new FileReader();
     reader.readAsDataURL(lastCapturedBlob);
     reader.onloadend = function () {
@@ -523,18 +547,8 @@ function sendCapturedVoice() {
         setWhisperTranscript("Processando…");
         var hint = document.getElementById("statusHint");
         if (hint) hint.textContent = "Transcrevendo no servidor…";
-        var mod = getTtsModulationPayload();
-        socket.emit("voice_message", {
-            username: document.getElementById("username")
-                ? document.getElementById("username").value
-                : "",
-            audio: base64,
-            output_lang: getOutputLang(),
-            tts_voice: getTtsVoice(),
-            tts_rate_percent: mod.tts_rate_percent,
-            tts_pitch_hz: mod.tts_pitch_hz,
-            tts_volume_percent: mod.tts_volume_percent,
-        });
+        payload.audio = base64;
+        socket.emit("voice_message", payload);
     };
 }
 

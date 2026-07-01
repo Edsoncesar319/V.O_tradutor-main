@@ -3,14 +3,34 @@ import logging
 import os
 import re
 import uuid
-import whisper
 from gtts import gTTS
 
 import edge_tts
 
+try:
+    import whisper
+
+    _WHISPER_AVAILABLE = True
+except ImportError:
+    whisper = None
+    _WHISPER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
-model = whisper.load_model("base")
+_whisper_model = None
+
+
+def _get_whisper_model():
+    if not _WHISPER_AVAILABLE:
+        raise RuntimeError(
+            "STT no servidor indisponível neste ambiente. "
+            "Use a transcrição ao vivo do navegador ou digite o texto."
+        )
+    global _whisper_model
+    if _whisper_model is None:
+        size = os.environ.get("WHISPER_MODEL", "base")
+        _whisper_model = whisper.load_model(size)
+    return _whisper_model
 
 _INVISIBLE_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff\u00ad]")
 
@@ -58,7 +78,7 @@ def clean_spoken_text(text):
 
 
 def speech_to_text(audio_path):
-    result = model.transcribe(audio_path)
+    result = _get_whisper_model().transcribe(audio_path)
     return result["text"]
 
 
@@ -130,7 +150,8 @@ def text_to_speech(text, lang, tts_voice=None, rate="+0%", pitch="+0Hz", volume=
         return None
 
     voice_id = pick_edge_voice(lang, tts_voice)
-    path = f"response_{lang}_{uuid.uuid4().hex[:12]}.mp3"
+    tmp_root = "/tmp" if os.environ.get("VERCEL") else "."
+    path = os.path.join(tmp_root, f"response_{lang}_{uuid.uuid4().hex[:12]}.mp3")
 
     def try_edge(r, p, v):
         _run_edge_async(_edge_tts_save(text, voice_id, path, rate=r, pitch=p, volume=v))
@@ -158,7 +179,7 @@ def text_to_speech(text, lang, tts_voice=None, rate="+0%", pitch="+0Hz", volume=
         else:
             logger.warning("Edge-TTS falhou: %s", exc1)
 
-    path_gt = f"response_{lang}_{uuid.uuid4().hex[:12]}_gt.mp3"
+    path_gt = os.path.join(tmp_root, f"response_{lang}_{uuid.uuid4().hex[:12]}_gt.mp3")
     try:
         tts = gTTS(text=text, lang=lang)
         tts.save(path_gt)

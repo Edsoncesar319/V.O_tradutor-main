@@ -1,0 +1,8 @@
+.git
+__pycache__
+*.pyc
+*.md
+LICENSE
+database/
+temp_audio.webm
+response_*.mp3
