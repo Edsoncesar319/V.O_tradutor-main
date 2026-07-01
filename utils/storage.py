@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import os
+import random
 import sqlite3
 import threading
+import time
 from copy import deepcopy
 from datetime import datetime, timezone
 
 from utils import blob_client
 
 _LOCK = threading.Lock()
-_BLOB_PATH = blob_client.DEFAULT_PATHNAME
-_BLOB_RETRIES = 12
+_USERS_PATH = blob_client.USERS_PATHNAME
+_LEGACY_PATH = blob_client.LEGACY_PATHNAME
+_BLOB_RETRIES = 24
 
 _DATA_ROOT = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SQLITE_DB = os.path.join(_DATA_ROOT, "database", "chat.db")
@@ -29,6 +32,13 @@ def _empty_store() -> dict:
     }
 
 
+def _empty_users_store() -> dict:
+    return {
+        "users": [],
+        "next_user_id": 1,
+    }
+
+
 def _use_blob() -> bool:
     return blob_client.blob_enabled()
 
@@ -38,11 +48,27 @@ def _is_precondition_error(exc: BaseException) -> bool:
     return "412" in msg or "precondition" in msg or "etag mismatch" in msg
 
 
-def _fetch_blob_store() -> tuple[dict, str | None]:
-    data, etag = blob_client.get_json(_BLOB_PATH)
-    if data is None:
-        return _empty_store(), None
-    return data, etag
+def _fetch_users_store() -> tuple[dict, str | None]:
+    data, etag = blob_client.get_json(_USERS_PATH)
+    if data is not None and data.get("users") is not None:
+        if "next_user_id" not in data:
+            data["next_user_id"] = max((u["id"] for u in data["users"]), default=0) + 1
+        return data, etag
+
+    legacy, _ = blob_client.get_json(_LEGACY_PATH)
+    if legacy is not None and legacy.get("users") is not None:
+        users_store = {
+            "users": legacy["users"],
+            "next_user_id": legacy.get("next_user_id", 1),
+        }
+        if users_store["users"]:
+            users_store["next_user_id"] = max(
+                users_store["next_user_id"],
+                max(u["id"] for u in users_store["users"]) + 1,
+            )
+        return users_store, None
+
+    return _empty_users_store(), None
 
 
 def _import_sqlite_into_store(conn: sqlite3.Connection) -> dict:
@@ -90,35 +116,55 @@ def _now_iso() -> str:
 
 
 def _init_blob_store_if_missing() -> None:
-    data, etag = _fetch_blob_store()
-    if data is not None and (data.get("users") is not None or data.get("messages") is not None):
+    data, etag = blob_client.get_json(_USERS_PATH)
+    if data is not None and data.get("users") is not None:
+        return
+
+    legacy, _ = blob_client.get_json(_LEGACY_PATH)
+    if legacy is not None and legacy.get("users") is not None:
+        users_store = {
+            "users": legacy["users"],
+            "next_user_id": legacy.get("next_user_id", 1),
+        }
+        if users_store["users"]:
+            users_store["next_user_id"] = max(
+                users_store["next_user_id"],
+                max(u["id"] for u in users_store["users"]) + 1,
+            )
+        blob_client.put_json(_USERS_PATH, users_store, if_match=None)
         return
 
     if os.path.isfile(SQLITE_DB):
         os.makedirs(os.path.dirname(SQLITE_DB), exist_ok=True)
         with sqlite3.connect(SQLITE_DB) as conn:
-            data = _import_sqlite_into_store(conn)
+            full = _import_sqlite_into_store(conn)
+        users_store = {
+            "users": full["users"],
+            "next_user_id": full["next_user_id"],
+        }
     else:
-        data = _empty_store()
+        users_store = _empty_users_store()
 
-    blob_client.put_json(_BLOB_PATH, data, if_match=etag)
+    blob_client.put_json(_USERS_PATH, users_store, if_match=None)
 
 
-def _save_blob_with_retry(mutator) -> object:
+def _save_users_with_retry(mutator) -> object:
     last_error: BaseException | None = None
-    for _ in range(_BLOB_RETRIES):
-        store, etag = _fetch_blob_store()
+    for attempt in range(_BLOB_RETRIES):
+        store, etag = _fetch_users_store()
         working = deepcopy(store)
         try:
             result = mutator(working)
         except Exception:
             raise
         try:
-            blob_client.put_json(_BLOB_PATH, working, if_match=etag)
+            blob_client.put_json(_USERS_PATH, working, if_match=etag)
             return result
         except RuntimeError as exc:
             if _is_precondition_error(exc):
                 last_error = exc
+                delay = min(0.04 * (2**attempt), 1.2) + random.uniform(0, 0.06)
+                time.sleep(delay)
                 continue
             raise
     raise RuntimeError(
@@ -126,10 +172,10 @@ def _save_blob_with_retry(mutator) -> object:
     ) from last_error
 
 
-def _with_store(mutator):
+def _with_users_store(mutator):
     with _LOCK:
         if _use_blob():
-            return _save_blob_with_retry(mutator)
+            return _save_users_with_retry(mutator)
         return mutator_sqlite(mutator)
 
 
@@ -204,7 +250,7 @@ def init_db():
 
 
 def _read_blob_users() -> list[dict]:
-    store, _ = _fetch_blob_store()
+    store, _ = _fetch_users_store()
     return list(store.get("users") or [])
 
 
@@ -268,7 +314,7 @@ def create_user(username: str, password_hash: str) -> int:
         )
         return user_id
 
-    return _with_store(mutate)
+    return _with_users_store(mutate)
 
 
 def update_user(user_id: int, *, username: str | None = None, password_hash: str | None = None) -> None:
@@ -283,7 +329,7 @@ def update_user(user_id: int, *, username: str | None = None, password_hash: str
             return
         raise KeyError(user_id)
 
-    _with_store(mutate)
+    _with_users_store(mutate)
 
 
 def delete_user(user_id: int) -> None:
@@ -291,10 +337,20 @@ def delete_user(user_id: int) -> None:
         store["users"] = [u for u in store["users"] if u["id"] != user_id]
         return
 
-    _with_store(mutate)
+    _with_users_store(mutate)
 
 
 def insert_message(username: str, message: str) -> None:
+    if _use_blob():
+        blob_client.put_message_json(
+            {
+                "username": username,
+                "message": message,
+                "created_at": _now_iso(),
+            }
+        )
+        return
+
     def mutate(store):
         if store["messages"]:
             last = store["messages"][-1]
@@ -307,4 +363,4 @@ def insert_message(username: str, message: str) -> None:
         )
         return
 
-    _with_store(mutate)
+    _with_users_store(mutate)

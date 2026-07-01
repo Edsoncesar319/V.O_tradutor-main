@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from typing import Any
 from urllib.parse import quote
 
@@ -11,7 +12,10 @@ import httpx
 
 BLOB_API_URL = "https://vercel.com/api/blob"
 BLOB_API_VERSION = "12"
-DEFAULT_PATHNAME = "vo-tradutor/database.json"
+LEGACY_PATHNAME = "vo-tradutor/database.json"
+USERS_PATHNAME = "vo-tradutor/users.json"
+MESSAGES_PREFIX = "vo-tradutor/messages/"
+DEFAULT_PATHNAME = USERS_PATHNAME
 
 
 def _clean_env(value: str) -> str:
@@ -111,3 +115,9 @@ def head_blob(pathname: str = DEFAULT_PATHNAME) -> dict[str, Any] | None:
         if resp.status_code >= 400:
             raise RuntimeError(f"Blob head falhou ({resp.status_code}): {resp.text}")
         return resp.json()
+
+
+def put_message_json(payload: dict[str, Any], *, access: str = "public") -> dict[str, Any]:
+    """Grava mensagem em blob único (append-only, sem conflito de ETag)."""
+    pathname = f"{MESSAGES_PREFIX}{uuid.uuid4().hex}.json"
+    return put_json(pathname, payload, if_match=None, access=access)
