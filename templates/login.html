@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260702">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/auth.css?v=20260703">
     <script>
         (function () {
             if (!location.port) return;
@@ -19,104 +20,70 @@
     </script>
 </head>
 <body class="md-auth-shell">
-    <header class="md-auth-nav" role="banner">
-        <div class="md-auth-nav__inner">
-            <a class="md-auth-brand" href="/">
-                <span class="material-symbols-outlined" aria-hidden="true">graphic_eq</span>
-                <span>V.O Tradutor</span>
-            </a>
-            <a class="md-auth-nav__link" href="/register">Criar conta</a>
-        </div>
+    <header class="md-auth-top" role="banner">
+        <a class="md-auth-back" href="/">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            Voltar ao site
+        </a>
     </header>
 
     <main class="md-auth-main" role="main">
-        <div class="md-auth-layout">
-            <aside class="md-auth-hero" aria-label="Sobre o V.O Tradutor">
-                <span class="md-auth-hero__badge">
-                    <span class="material-symbols-outlined" aria-hidden="true">translate</span>
-                    Tradução por voz
-                </span>
-                <h1 class="md-auth-hero__title">Comunique-se em cinco idiomas com naturalidade</h1>
-                <p class="md-auth-hero__subtitle">
-                    Digite ou fale sua mensagem e receba traduções com áudio neural em tempo real.
-                </p>
-                <div class="md-auth-hero__divider" aria-hidden="true"></div>
-                <ul class="md-auth-hero__list">
-                    <li>Entrada por voz ou texto</li>
-                    <li>EN · ES · FR · PT · IT</li>
-                    <li>Vozes neurais Edge TTS</li>
-                </ul>
-            </aside>
+        <section class="md-auth-card" aria-label="Entrar">
+            <header class="md-auth-card__head">
+                <div class="md-auth-card__icon-wrap" aria-hidden="true">
+                    <span class="material-symbols-outlined">login</span>
+                </div>
+                <h1 class="md-auth-card__title">Entrar</h1>
+                <p class="md-auth-card__subtitle">Acesse sua conta do V.O Tradutor</p>
+            </header>
 
-            <section class="md-auth-card" aria-label="Entrar">
-                <header class="md-auth-card__head">
-                    <div class="md-auth-card__icon-wrap" aria-hidden="true">
-                        <span class="material-symbols-outlined">login</span>
+            <form class="md-auth-form" method="post" action="/login" novalidate>
+                <div class="md-auth-field">
+                    <label class="md-auth-field__label" for="username">Usuário</label>
+                    <div class="md-auth-field__box">
+                        <span class="material-symbols-outlined md-auth-field__leading" aria-hidden="true">person</span>
+                        <input id="username" name="username" type="text" autocomplete="username" placeholder="Seu usuário" value="{{ username or '' }}" required>
                     </div>
-                    <h2 class="md-auth-card__title">Bem-vindo de volta</h2>
-                    <p class="md-auth-card__subtitle">Entre na sua conta para continuar</p>
-                </header>
+                </div>
 
-                <form class="md-auth-form" method="post" action="/login" novalidate>
-                    <div class="md-auth-field">
-                        <label class="md-auth-field__label" for="username">Usuário</label>
-                        <div class="md-auth-field__box">
-                            <span class="material-symbols-outlined md-auth-field__leading" aria-hidden="true">person</span>
-                            <input id="username" name="username" type="text" autocomplete="username" placeholder="Seu usuário" value="{{ username or '' }}" required>
-                        </div>
+                <div class="md-auth-field">
+                    <label class="md-auth-field__label" for="password">Senha</label>
+                    <div class="md-auth-field__box">
+                        <span class="material-symbols-outlined md-auth-field__leading" aria-hidden="true">lock</span>
+                        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required>
+                        <button type="button" class="md-auth-field__toggle" data-toggle-password="password" aria-label="Mostrar senha">
+                            <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
+                        </button>
                     </div>
+                </div>
 
-                    <div class="md-auth-field">
-                        <label class="md-auth-field__label" for="password">Senha</label>
-                        <div class="md-auth-field__box">
-                            <span class="material-symbols-outlined md-auth-field__leading" aria-hidden="true">lock</span>
-                            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required>
-                            <button type="button" class="md-auth-field__toggle" data-toggle-password="password" aria-label="Mostrar senha">
-                                <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
-                            </button>
-                        </div>
+                <div class="md-auth-row">
+                    <label class="md-auth-checkbox">
+                        <input type="checkbox" name="remember_me">
+                        <span class="md-auth-checkbox__box" aria-hidden="true"></span>
+                        <span>Lembrar-me</span>
+                    </label>
+                </div>
+
+                {% if error %}
+                    <div class="md-auth-banner md-auth-banner--error" role="alert">
+                        <span class="material-symbols-outlined" aria-hidden="true">error</span>
+                        <span>{{ error }}</span>
                     </div>
+                {% endif %}
 
-                    <div class="md-auth-row">
-                        <label class="md-auth-checkbox">
-                            <input type="checkbox" name="remember_me">
-                            <span class="md-auth-checkbox__box" aria-hidden="true"></span>
-                            <span>Lembrar-me</span>
-                        </label>
-                    </div>
+                <button type="submit" class="md-auth-submit">
+                    <span class="material-symbols-outlined" aria-hidden="true">login</span>
+                    Entrar
+                </button>
+            </form>
 
-                    {% if error %}
-                        <div class="md-auth-banner md-auth-banner--error" role="alert">
-                            <span class="material-symbols-outlined" aria-hidden="true">error</span>
-                            <span>{{ error }}</span>
-                        </div>
-                    {% endif %}
-
-                    <button type="submit" class="md-auth-submit">
-                        <span class="material-symbols-outlined" aria-hidden="true">login</span>
-                        Entrar
-                    </button>
-                </form>
-
-                <footer class="md-auth-card__foot">
-                    <p>Não tem conta? <a class="md-auth-link" href="/register">Criar cadastro</a></p>
-                </footer>
-            </section>
-        </div>
+            <footer class="md-auth-card__foot">
+                <p>Não tem conta? <a class="md-auth-link" href="/register">Criar cadastro</a></p>
+            </footer>
+        </section>
     </main>
 
-    <script>
-        document.querySelectorAll("[data-toggle-password]").forEach(function (btn) {
-            btn.addEventListener("click", function () {
-                var input = document.getElementById(btn.getAttribute("data-toggle-password"));
-                if (!input) return;
-                var icon = btn.querySelector(".material-symbols-outlined");
-                var show = input.type === "password";
-                input.type = show ? "text" : "password";
-                if (icon) icon.textContent = show ? "visibility_off" : "visibility";
-                btn.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
-            });
-        });
-    </script>
+    <script src="/static/js/auth.js"></script>
 </body>
 </html>

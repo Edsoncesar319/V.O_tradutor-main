@@ -1,0 +1,39 @@
+/* Material Design 3 — tokens compartilhados */
+:root {
+    --md-sys-color-primary: #20d1f2;
+    --md-sys-color-on-primary: #ecf7ff;
+    --md-sys-color-primary-container: #168ee3;
+    --md-sys-color-on-primary-container: #ecf7ff;
+    --md-sys-color-surface: #072e61;
+    --md-sys-color-surface-container-low: #0a3f80;
+    --md-sys-color-surface-container: #0c4e9d;
+    --md-sys-color-surface-container-high: #1360b8;
+    --md-sys-color-surface-container-highest: #1670cf;
+    --md-sys-color-on-surface: #ecf7ff;
+    --md-sys-color-on-surface-variant: #cfe9ff;
+    --md-sys-color-outline: #8cc8f4;
+    --md-sys-color-outline-variant: #2f7fc7;
+    --md-sys-color-error: #f2b8b5;
+    --md-sys-color-on-error: #601410;
+    --md-elevation-1: 0 1px 2px rgba(7, 4, 211, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+    --md-elevation-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
+    --md-shape-corner-extra-small: 4px;
+    --md-shape-corner-medium: 12px;
+    --md-shape-corner-full: 9999px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Roboto", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface);
+    -webkit-font-smoothing: antialiased;
+}
