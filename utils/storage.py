@@ -12,12 +12,11 @@ from utils import blob_client
 
 _LOCK = threading.Lock()
 _BLOB_PATH = blob_client.DEFAULT_PATHNAME
+_BLOB_RETRIES = 12
 
 _DATA_ROOT = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SQLITE_DB = os.path.join(_DATA_ROOT, "database", "chat.db")
 
-_store: dict | None = None
-_store_etag: str | None = None
 _initialized = False
 
 
@@ -32,6 +31,18 @@ def _empty_store() -> dict:
 
 def _use_blob() -> bool:
     return blob_client.blob_enabled()
+
+
+def _is_precondition_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "412" in msg or "precondition" in msg or "etag mismatch" in msg
+
+
+def _fetch_blob_store() -> tuple[dict, str | None]:
+    data, etag = blob_client.get_json(_BLOB_PATH)
+    if data is None:
+        return _empty_store(), None
+    return data, etag
 
 
 def _import_sqlite_into_store(conn: sqlite3.Connection) -> dict:
@@ -78,53 +89,47 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _load_blob_store() -> dict:
-    global _store, _store_etag
-    data, etag = blob_client.get_json(_BLOB_PATH)
-    if data is None:
-        if os.path.isfile(SQLITE_DB):
-            os.makedirs(os.path.dirname(SQLITE_DB), exist_ok=True)
-            with sqlite3.connect(SQLITE_DB) as conn:
-                data = _import_sqlite_into_store(conn)
-            blob_client.put_json(_BLOB_PATH, data)
-            _store = data
-            _store_etag = None
-            return deepcopy(_store)
+def _init_blob_store_if_missing() -> None:
+    data, etag = _fetch_blob_store()
+    if data is not None and (data.get("users") is not None or data.get("messages") is not None):
+        return
+
+    if os.path.isfile(SQLITE_DB):
+        os.makedirs(os.path.dirname(SQLITE_DB), exist_ok=True)
+        with sqlite3.connect(SQLITE_DB) as conn:
+            data = _import_sqlite_into_store(conn)
+    else:
         data = _empty_store()
-        blob_client.put_json(_BLOB_PATH, data)
-    _store = data
-    _store_etag = etag
-    return deepcopy(_store)
+
+    blob_client.put_json(_BLOB_PATH, data, if_match=etag)
 
 
-def _save_blob_store(store: dict) -> None:
-    global _store, _store_etag
-    try:
-        result = blob_client.put_json(_BLOB_PATH, store, if_match=_store_etag)
-    except RuntimeError as exc:
-        if "precondition" in str(exc).lower() or "412" in str(exc):
-            fresh, etag = blob_client.get_json(_BLOB_PATH)
-            if fresh is None:
-                fresh = _empty_store()
-            _store = fresh
-            _store_etag = etag
+def _save_blob_with_retry(mutator) -> object:
+    last_error: BaseException | None = None
+    for _ in range(_BLOB_RETRIES):
+        store, etag = _fetch_blob_store()
+        working = deepcopy(store)
+        try:
+            result = mutator(working)
+        except Exception:
             raise
-        raise
-    _store = store
-    _store_etag = result.get("etag")
+        try:
+            blob_client.put_json(_BLOB_PATH, working, if_match=etag)
+            return result
+        except RuntimeError as exc:
+            if _is_precondition_error(exc):
+                last_error = exc
+                continue
+            raise
+    raise RuntimeError(
+        "Não foi possível salvar os dados agora (muitas atualizações simultâneas). Tente novamente."
+    ) from last_error
 
 
 def _with_store(mutator):
-    global _store, _store_etag
     with _LOCK:
         if _use_blob():
-            if _store is None:
-                _load_blob_store()
-            store = deepcopy(_store)
-            result = mutator(store)
-            _save_blob_store(store)
-            return result
-
+            return _save_blob_with_retry(mutator)
         return mutator_sqlite(mutator)
 
 
@@ -192,27 +197,28 @@ def init_db():
         return
     if _use_blob():
         with _LOCK:
-            _load_blob_store()
+            _init_blob_store_if_missing()
     else:
         init_sqlite()
     _initialized = True
+
+
+def _read_blob_users() -> list[dict]:
+    store, _ = _fetch_blob_store()
+    return list(store.get("users") or [])
 
 
 def get_user_by_id(user_id):
     if not user_id:
         return None
 
-    def find(store):
-        for user in store["users"]:
-            if user["id"] == user_id:
-                return dict(user)
-        return None
-
     if _use_blob():
         with _LOCK:
-            if _store is None:
-                _load_blob_store()
-            return find(_store)
+            for user in _read_blob_users():
+                if user["id"] == user_id:
+                    return dict(user)
+        return None
+
     init_sqlite()
     conn = sqlite3.connect(SQLITE_DB)
     conn.row_factory = sqlite3.Row
@@ -230,9 +236,7 @@ def get_user_by_username(username):
 
     if _use_blob():
         with _LOCK:
-            if _store is None:
-                _load_blob_store()
-            for user in _store["users"]:
+            for user in _read_blob_users():
                 if user["username"] == username:
                     return dict(user)
         return None
@@ -249,6 +253,9 @@ def get_user_by_username(username):
 
 def create_user(username: str, password_hash: str) -> int:
     def mutate(store):
+        for user in store["users"]:
+            if user["username"] == username:
+                return user["id"]
         user_id = store["next_user_id"]
         store["next_user_id"] += 1
         store["users"].append(
@@ -289,6 +296,10 @@ def delete_user(user_id: int) -> None:
 
 def insert_message(username: str, message: str) -> None:
     def mutate(store):
+        if store["messages"]:
+            last = store["messages"][-1]
+            if last.get("username") == username and last.get("message") == message:
+                return
         msg_id = store["next_message_id"]
         store["next_message_id"] += 1
         store["messages"].append(

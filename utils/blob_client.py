@@ -76,9 +76,14 @@ def put_json(pathname: str, payload: dict[str, Any], *, if_match: str | None = N
     params = {"pathname": pathname}
     with httpx.Client(timeout=30.0) as client:
         resp = client.put(f"{BLOB_API_URL}/", params=params, content=body, headers=headers)
+        if resp.status_code == 412:
+            raise RuntimeError(f"Blob put falhou (412): {resp.text}")
         if resp.status_code >= 400:
             raise RuntimeError(f"Blob put falhou ({resp.status_code}): {resp.text}")
-        return resp.json()
+        result = resp.json()
+        if result.get("etag"):
+            result["etag"] = _clean_env(str(result["etag"])).strip('"')
+        return result
 
 
 def get_json(pathname: str = DEFAULT_PATHNAME, *, access: str = "public") -> tuple[dict[str, Any] | None, str | None]:
