@@ -225,9 +225,15 @@ def _broadcast_translation(
 
 
 @app.route("/")
+def landing():
+    if session.get("user_id"):
+        return redirect(url_for("index"))
+    return render_template("landing.html")
+
+
+@app.route("/app")
+@login_required
 def index():
-    if not session.get("user_id"):
-        return redirect(url_for("login"))
     return render_template("index.html", username=session.get("username", ""))
 
 

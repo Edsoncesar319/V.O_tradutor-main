@@ -15,7 +15,7 @@
             if (!location.port) return;
             if (location.port === "5000") return;
             if (location.hostname !== "127.0.0.1" && location.hostname !== "localhost") return;
-            location.replace(location.protocol + "//" + location.hostname + ":5000/");
+            location.replace(location.protocol + "//" + location.hostname + ":5000/app");
         })();
     </script>
     <!-- Live Server (:5500): app.js usa automaticamente a API em :5000. Outra porta: <script>window.__VOICEOVER_API__='http://127.0.0.1:PORT';</script> -->
