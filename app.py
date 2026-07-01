@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from flask import (
@@ -136,6 +137,65 @@ def login_required(fn):
     return wrapper
 
 
+def api_login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify({"error": "Faça login para usar o app."}), 401
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _build_translation(
+    username,
+    text,
+    output_langs=None,
+    tts_voice=None,
+    rate="+0%",
+    pitch="+0Hz",
+    volume="+0%",
+    include_audio=True,
+):
+    """text já limpo: traduz, opcionalmente TTS, grava DB e devolve payload."""
+    languages = output_langs if output_langs else list(OUTPUT_LANGS)
+    translations = {}
+    audio_responses = {}
+
+    with ThreadPoolExecutor(max_workers=len(languages) or 1) as pool:
+        futures = {lang: pool.submit(translate_text, text, lang) for lang in languages}
+        for lang, future in futures.items():
+            translations[lang] = future.result()
+
+    if include_audio:
+        for lang in languages:
+            translated = translations[lang]
+            audio_file = text_to_speech(translated, lang, tts_voice, rate=rate, pitch=pitch, volume=volume)
+            if not audio_file:
+                continue
+            with open(audio_file, "rb") as f:
+                audio_responses[lang] = base64.b64encode(f.read()).decode("utf-8")
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+
+    storage.insert_message(username, text)
+
+    return {
+        "username": username,
+        "original": text,
+        "translations": translations,
+        "audio": audio_responses,
+        "output_langs": languages,
+    }
+
+
+def _http_include_audio():
+    """Na Vercel, TTS é pedido em chamadas separadas para evitar timeout 504."""
+    return not os.environ.get("VERCEL")
+
+
 def _broadcast_translation(
     username,
     text,
@@ -145,37 +205,90 @@ def _broadcast_translation(
     pitch="+0Hz",
     volume="+0%",
 ):
-    """text já limpo e não vazio: traduz, TTS, grava DB e envia a todos."""
-    languages = output_langs if output_langs else list(OUTPUT_LANGS)
-    translations = {}
-    audio_responses = {}
+    """text já limpo e não vazio: traduz, TTS, grava DB e envia a todos (Socket.IO)."""
+    payload = _build_translation(
+        username, text, output_langs, tts_voice, rate, pitch, volume
+    )
+    emit("receive_translation", payload, broadcast=True)
 
-    for lang in languages:
-        translated = translate_text(text, lang)
-        translations[lang] = translated
-        audio_file = text_to_speech(translated, lang, tts_voice, rate=rate, pitch=pitch, volume=volume)
-        if not audio_file:
-            continue
-        with open(audio_file, "rb") as f:
-            audio_responses[lang] = base64.b64encode(f.read()).decode("utf-8")
+
+def _process_text_payload(data, user):
+    username = user["username"]
+    text = clean_spoken_text(data.get("text", ""))
+
+    if not text:
+        return {
+            "transcription": {"text": "", "error": "Digite uma mensagem antes de enviar."},
+            "translation": None,
+        }
+
+    try:
+        r, p, vol = _parse_tts_modulation(data)
+        translation = _build_translation(
+            username,
+            text,
+            _resolve_output_langs(data),
+            _parse_tts_voice(data),
+            r,
+            p,
+            vol,
+            include_audio=_http_include_audio(),
+        )
+        return {"transcription": {"text": text}, "translation": translation}
+    except Exception as exc:
+        return {"transcription": {"text": "", "error": str(exc)}, "translation": None}
+
+
+def _process_voice_payload(data, user):
+    username = user["username"]
+    audio_base64 = data.get("audio")
+    if not audio_base64:
+        return {
+            "transcription": {"text": "", "error": "Áudio não enviado. Tente gravar novamente."},
+            "translation": None,
+        }
+
+    audio_bytes = base64.b64decode(audio_base64)
+    audio_path = os.path.join(TMP_DIR, "temp_audio.webm")
+    with open(audio_path, "wb") as f:
+        f.write(audio_bytes)
+
+    try:
         try:
-            os.remove(audio_file)
+            text = clean_spoken_text(speech_to_text(audio_path))
+            r, p, vol = _parse_tts_modulation(data)
+            out_langs = _resolve_output_langs(data)
+
+            if not text:
+                return {
+                    "transcription": {"text": ""},
+                    "translation": {
+                        "username": username,
+                        "original": "",
+                        "translations": {lang: "" for lang in out_langs},
+                        "audio": {},
+                        "output_langs": out_langs,
+                    },
+                }
+
+            translation = _build_translation(
+                username,
+                text,
+                out_langs,
+                _parse_tts_voice(data),
+                r,
+                p,
+                vol,
+                include_audio=_http_include_audio(),
+            )
+            return {"transcription": {"text": text}, "translation": translation}
+        except Exception as exc:
+            return {"transcription": {"text": "", "error": str(exc)}, "translation": None}
+    finally:
+        try:
+            os.remove(audio_path)
         except OSError:
             pass
-
-    storage.insert_message(username, text)
-
-    emit(
-        "receive_translation",
-        {
-            "username": username,
-            "original": text,
-            "translations": translations,
-            "audio": audio_responses,
-            "output_langs": languages,
-        },
-        broadcast=True,
-    )
 
 
 @app.route("/")
@@ -188,7 +301,12 @@ def landing():
 @app.route("/app")
 @login_required
 def index():
-    return render_template("index.html", username=session.get("username", ""))
+    use_http_api = bool(os.environ.get("VERCEL"))
+    return render_template(
+        "index.html",
+        username=session.get("username", ""),
+        use_http_api=use_http_api,
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -306,6 +424,50 @@ def site_webmanifest():
     )
 
 
+@app.route("/api/message/text", methods=["POST"])
+@api_login_required
+def api_message_text():
+    data = _normalize_socket_payload(request.get_json(silent=True))
+    user = current_user()
+    return jsonify(_process_text_payload(data, user))
+
+
+@app.route("/api/message/voice", methods=["POST"])
+@api_login_required
+def api_message_voice():
+    data = _normalize_socket_payload(request.get_json(silent=True))
+    user = current_user()
+    return jsonify(_process_voice_payload(data, user))
+
+
+@app.route("/api/tts", methods=["POST"])
+@api_login_required
+def api_tts():
+    """Gera áudio TTS para um idioma (evita timeout na tradução completa)."""
+    data = _normalize_socket_payload(request.get_json(silent=True))
+    text = clean_spoken_text(data.get("text", ""))
+    lang = str(data.get("lang") or "en").strip().lower()
+    if lang not in OUTPUT_LANGS:
+        return jsonify({"error": "Idioma inválido."}), 400
+    if not text:
+        return jsonify({"error": "Texto vazio."}), 400
+
+    try:
+        r, p, vol = _parse_tts_modulation(data)
+        audio_file = text_to_speech(text, lang, _parse_tts_voice(data), rate=r, pitch=p, volume=vol)
+        if not audio_file:
+            return jsonify({"lang": lang, "audio": ""})
+        with open(audio_file, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        try:
+            os.remove(audio_file)
+        except OSError:
+            pass
+        return jsonify({"lang": lang, "audio": audio_b64})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/tts-voices")
 def api_tts_voices():
     """Vozes neurais Edge-TTS (EN/ES/FR/PT/IT) para o seletor do front."""
@@ -336,40 +498,10 @@ def handle_text_message(data):
         )
         return
 
-    username = user["username"]
-    text = clean_spoken_text(data.get("text", ""))
-
-    if not text:
-        emit(
-            "transcription",
-            {"text": "", "error": "Digite uma mensagem antes de enviar."},
-            to=request.sid,
-        )
-        return
-
-    emit(
-        "transcription",
-        {"text": text},
-        to=request.sid,
-    )
-
-    try:
-        r, p, vol = _parse_tts_modulation(data)
-        _broadcast_translation(
-            username,
-            text,
-            _resolve_output_langs(data),
-            _parse_tts_voice(data),
-            r,
-            p,
-            vol,
-        )
-    except Exception as exc:
-        emit(
-            "transcription",
-            {"text": "", "error": str(exc)},
-            to=request.sid,
-        )
+    result = _process_text_payload(data, user)
+    emit("transcription", result["transcription"], to=request.sid)
+    if result.get("translation"):
+        emit("receive_translation", result["translation"], broadcast=True)
 
 
 @socketio.on("voice_message")
@@ -384,62 +516,10 @@ def handle_voice(data):
         )
         return
 
-    username = user["username"]
-    audio_base64 = data.get("audio")
-    if not audio_base64:
-        emit(
-            "transcription",
-            {"text": "", "error": "Áudio não enviado. Tente gravar novamente."},
-            to=request.sid,
-        )
-        return
-    audio_bytes = base64.b64decode(audio_base64)
-
-    # Browser MediaRecorder typically emits WebM/Opus; Whisper accepts this format.
-    audio_path = os.path.join(TMP_DIR, "temp_audio.webm")
-    with open(audio_path, "wb") as f:
-        f.write(audio_bytes)
-
-    try:
-        try:
-            text = clean_spoken_text(speech_to_text(audio_path))
-            r, p, vol = _parse_tts_modulation(data)
-
-            emit(
-                "transcription",
-                {"text": text},
-                to=request.sid,
-            )
-
-            out_langs = _resolve_output_langs(data)
-            translations = {lang: "" for lang in out_langs}
-
-            if not text:
-                emit(
-                    "receive_translation",
-                    {
-                        "username": username,
-                        "original": "",
-                        "translations": translations,
-                        "audio": {},
-                        "output_langs": out_langs,
-                    },
-                    broadcast=True,
-                )
-                return
-
-            _broadcast_translation(username, text, out_langs, _parse_tts_voice(data), r, p, vol)
-        except Exception as exc:
-            emit(
-                "transcription",
-                {"text": "", "error": str(exc)},
-                to=request.sid,
-            )
-    finally:
-        try:
-            os.remove(audio_path)
-        except OSError:
-            pass
+    result = _process_voice_payload(data, user)
+    emit("transcription", result["transcription"], to=request.sid)
+    if result.get("translation"):
+        emit("receive_translation", result["translation"], broadcast=True)
 
 
 os.makedirs(VOICES_DIR, exist_ok=True)

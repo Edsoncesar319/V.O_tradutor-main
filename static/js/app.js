@@ -30,14 +30,156 @@ function getApiBase() {
 
 var API_BASE = getApiBase();
 
+/** Vercel/produção: HTTP API. Live Server: Socket.IO na porta 5000. */
+var USE_HTTP_API =
+    typeof window.__USE_HTTP_API__ === "boolean"
+        ? window.__USE_HTTP_API__
+        : !API_BASE;
+
 function apiUrl(path) {
     var p = path.charAt(0) === "/" ? path : "/" + path;
     return (API_BASE || "") + p;
 }
 
-var socket = API_BASE
-    ? io(API_BASE, { transports: ["polling", "websocket"] })
-    : io({ transports: ["polling", "websocket"] });
+var socket = null;
+
+function handleTranscription(payload) {
+    var hint = document.getElementById("statusHint");
+    if (hint) hint.textContent = "";
+    if (payload && payload.error) {
+        setWhisperTranscript("Erro: " + payload.error);
+        return;
+    }
+    var t = payload && payload.text != null ? payload.text : "";
+    setWhisperTranscript(t);
+}
+
+function handleReceiveTranslation(data) {
+    var article = appendMessage(data);
+    if (USE_HTTP_API) {
+        fetchMessageAudio(data, article).then(function (enriched) {
+            playResponseWithCapturedVoice(enriched);
+        });
+        return;
+    }
+    playResponseWithCapturedVoice(data);
+}
+
+function getTtsRequestPayload(text, langCode) {
+    var mod = getTtsModulationPayload();
+    return {
+        text: text,
+        lang: langCode,
+        tts_voice: getTtsVoice(),
+        tts_rate_percent: mod.tts_rate_percent,
+        tts_pitch_hz: mod.tts_pitch_hz,
+        tts_volume_percent: mod.tts_volume_percent,
+    };
+}
+
+function updateMessageBlockAudio(article, langCode, audioBase64) {
+    if (!article || !langCode) return;
+    var block = article.querySelector('.md-message__block[data-lang="' + langCode + '"]');
+    if (!block) return;
+    var btnPlay = block.querySelector(".md-message__play");
+    var btnDownload = block.querySelectorAll(".md-message__play")[1];
+    if (!audioBase64) return;
+    if (btnPlay) {
+        btnPlay.disabled = false;
+        btnPlay.onclick = function () {
+            stopAllTranslationAudio();
+            var a = new Audio("data:audio/mp3;base64," + audioBase64);
+            trackAudioPlayback(a);
+            a.play();
+        };
+    }
+    if (btnDownload) {
+        btnDownload.disabled = false;
+        btnDownload.onclick = function () {
+            downloadTranslationAudio(audioBase64, langCode);
+        };
+    }
+}
+
+function fetchMessageAudio(data, article) {
+    if (!USE_HTTP_API || !data || !data.translations) {
+        return Promise.resolve(data);
+    }
+    var langs =
+        data.output_langs && data.output_langs.length
+            ? data.output_langs
+            : Object.keys(data.translations);
+    data.audio = data.audio || {};
+    var hint = document.getElementById("statusHint");
+    if (hint) hint.textContent = "Gerando áudio das traduções…";
+
+    var jobs = langs.map(function (code) {
+        var text = data.translations[code];
+        if (!text || !String(text).trim()) return Promise.resolve(null);
+        return postMessageApi("/api/tts", getTtsRequestPayload(text, code))
+            .then(function (res) {
+                if (res && res.audio) {
+                    data.audio[code] = res.audio;
+                    updateMessageBlockAudio(article, code, res.audio);
+                }
+                return res;
+            })
+            .catch(function () {
+                return null;
+            });
+    });
+
+    return Promise.all(jobs).then(function () {
+        if (hint) hint.textContent = "";
+        return data;
+    });
+}
+
+function postMessageApi(path, payload) {
+    return fetch(apiUrl(path), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+    }).then(function (res) {
+        if (res.status === 401) {
+            window.location.href = apiUrl("/login");
+            throw new Error("Não autenticado");
+        }
+        if (!res.ok) {
+            return res.text().then(function (body) {
+                throw new Error(body || "HTTP " + res.status);
+            });
+        }
+        return res.json();
+    });
+}
+
+function dispatchMessage(path, payload) {
+    if (USE_HTTP_API) {
+        return postMessageApi(path, payload)
+            .then(function (result) {
+                if (result && result.transcription) {
+                    handleTranscription(result.transcription);
+                }
+                if (result && result.translation) {
+                    handleReceiveTranslation(result.translation);
+                }
+            })
+            .catch(function (err) {
+                handleTranscription({ text: "", error: err.message || "Falha na requisição." });
+            });
+    }
+    if (!socket) return;
+    var event = path.indexOf("voice") >= 0 ? "voice_message" : "text_message";
+    socket.emit(event, payload);
+}
+
+if (!USE_HTTP_API && typeof io !== "undefined") {
+    socket = io(API_BASE, { transports: ["polling", "websocket"] });
+    socket.on("transcription", handleTranscription);
+    socket.on("receive_translation", handleReceiveTranslation);
+}
 
 var liveRecognition = null;
 
@@ -536,7 +678,7 @@ function sendCapturedVoice() {
         var hint = document.getElementById("statusHint");
         if (hint) hint.textContent = "Enviando transcrição do navegador…";
         payload.text = liveText;
-        socket.emit("text_message", payload);
+        dispatchMessage("/api/message/text", payload);
         return;
     }
 
@@ -548,7 +690,7 @@ function sendCapturedVoice() {
         var hint = document.getElementById("statusHint");
         if (hint) hint.textContent = "Transcrevendo no servidor…";
         payload.audio = base64;
-        socket.emit("voice_message", payload);
+        dispatchMessage("/api/message/voice", payload);
     };
 }
 
@@ -667,17 +809,6 @@ function downloadTranslationAudio(audioBase64, langCode) {
     }
 }
 
-socket.on("transcription", function (payload) {
-    var hint = document.getElementById("statusHint");
-    if (hint) hint.textContent = "";
-    if (payload && payload.error) {
-        setWhisperTranscript("Erro: " + payload.error);
-        return;
-    }
-    var t = payload && payload.text != null ? payload.text : "";
-    setWhisperTranscript(t);
-});
-
 function appendMessage(data) {
     var chat = document.getElementById("chat");
     if (!chat) return;
@@ -711,6 +842,7 @@ function appendMessage(data) {
     function addBlock(labelKey, text, audioBase64, langCode) {
         var p = document.createElement("div");
         p.className = "md-message__block";
+        if (langCode) p.setAttribute("data-lang", langCode);
         var span = document.createElement("span");
         span.className = "md-message__label";
         span.textContent = labelKey;
@@ -775,6 +907,7 @@ function appendMessage(data) {
 
     chat.appendChild(article);
     chat.scrollTop = chat.scrollHeight;
+    return article;
 }
 
 function renderChatEmptyState() {
@@ -799,11 +932,6 @@ function clearChatDialog() {
     renderChatEmptyState();
 }
 
-socket.on("receive_translation", function (data) {
-    appendMessage(data);
-    playResponseWithCapturedVoice(data);
-});
-
 function sendTextMessage() {
     var input = document.getElementById("messageInput");
     if (!input) return;
@@ -815,7 +943,7 @@ function sendTextMessage() {
 
     setWhisperTranscript("Processando…");
     var mod = getTtsModulationPayload();
-    socket.emit("text_message", {
+    dispatchMessage("/api/message/text", {
         username: document.getElementById("username")
             ? document.getElementById("username").value
             : "",

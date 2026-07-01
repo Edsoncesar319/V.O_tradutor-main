@@ -10,7 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css?v=20260402b">
+    <script>
+        window.__USE_HTTP_API__ = {{ use_http_api | tojson }};
+    </script>
+    {% if not use_http_api %}
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    {% endif %}
     <script>
         (function () {
             if (!location.port) return;
@@ -189,6 +194,6 @@
             </section>
         </main>
     </div>
-    <script src="/static/js/app.js?v=20260402c"></script>
+    <script src="/static/js/app.js?v=20260705"></script>
 </body>
 </html>
