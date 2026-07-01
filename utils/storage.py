@@ -18,6 +18,7 @@ SQLITE_DB = os.path.join(_DATA_ROOT, "database", "chat.db")
 
 _store: dict | None = None
 _store_etag: str | None = None
+_initialized = False
 
 
 def _empty_store() -> dict:
@@ -186,11 +187,15 @@ def init_sqlite():
 
 
 def init_db():
+    global _initialized
+    if _initialized:
+        return
     if _use_blob():
         with _LOCK:
             _load_blob_store()
     else:
         init_sqlite()
+    _initialized = True
 
 
 def get_user_by_id(user_id):

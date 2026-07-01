@@ -14,8 +14,16 @@ BLOB_API_VERSION = "12"
 DEFAULT_PATHNAME = "vo-tradutor/database.json"
 
 
+def _clean_env(value: str) -> str:
+    """Remove BOM e espaços (comum quando env é criada via PowerShell/echo)."""
+    return value.strip().lstrip("\ufeff").strip()
+
+
 def _read_env(name: str) -> str | None:
-    value = os.environ.get(name, "").strip()
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    value = _clean_env(str(raw))
     return value or None
 
 
@@ -63,7 +71,7 @@ def put_json(pathname: str, payload: dict[str, Any], *, if_match: str | None = N
         "x-content-length": str(len(body)),
     }
     if if_match:
-        headers["x-if-match"] = if_match
+        headers["x-if-match"] = _clean_env(str(if_match)).strip('"')
 
     params = {"pathname": pathname}
     with httpx.Client(timeout=30.0) as client:
@@ -84,6 +92,8 @@ def get_json(pathname: str = DEFAULT_PATHNAME, *, access: str = "public") -> tup
         if resp.status_code >= 400:
             raise RuntimeError(f"Blob get falhou ({resp.status_code}): {resp.text}")
         etag = resp.headers.get("etag")
+        if etag:
+            etag = _clean_env(etag).strip('"')
         return json.loads(resp.content.decode("utf-8")), etag
 
 
