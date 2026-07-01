@@ -297,6 +297,15 @@ def account():
     return render_template("account.html", error=error, username=user["username"])
 
 
+@app.route("/site.webmanifest")
+def site_webmanifest():
+    return send_from_directory(
+        os.path.join(app.root_path, "static", "icons"),
+        "site.webmanifest",
+        mimetype="application/manifest+json",
+    )
+
+
 @app.route("/api/tts-voices")
 def api_tts_voices():
     """Vozes neurais Edge-TTS (EN/ES/FR/PT/IT) para o seletor do front."""
