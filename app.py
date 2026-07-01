@@ -15,10 +15,11 @@ from flask import (
     url_for,
 )
 from flask_socketio import SocketIO, emit
-import sqlite3
 
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from utils import storage
 
 from utils.ai_voice import (
     clean_spoken_text,
@@ -45,7 +46,6 @@ def _cors_all(resp):
     return resp
 
 _DATA_ROOT = "/tmp" if os.environ.get("VERCEL") else os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(_DATA_ROOT, "database", "chat.db")
 VOICES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 TMP_DIR = _DATA_ROOT
 ALLOWED_VOICE_ASSETS = frozenset({"Starke+Edson.mp3", "Starke+voz+02.mp3"})
@@ -111,54 +111,15 @@ def _parse_tts_modulation(payload):
 
 
 def init_db():
-    os.makedirs(os.path.dirname(DB), exist_ok=True)
-    conn = sqlite3.connect(DB)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        message TEXT
-    )
-    """
-    )
-    cursor.execute(
-        """
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """
-    )
-    conn.commit()
-    conn.close()
+    storage.init_db()
 
 
 def _get_user_by_id(user_id):
-    if not user_id:
-        return None
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT id, username, password_hash FROM users WHERE id = ?", (user_id,))
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return storage.get_user_by_id(user_id)
 
 
 def _get_user_by_username(username):
-    if not username:
-        return None
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return storage.get_user_by_username(username)
 
 
 def current_user():
@@ -202,14 +163,7 @@ def _broadcast_translation(
         except OSError:
             pass
 
-    conn = sqlite3.connect(DB)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO messages (username, message) VALUES (?, ?)",
-        (username, text),
-    )
-    conn.commit()
-    conn.close()
+    storage.insert_message(username, text)
 
     emit(
         "receive_translation",
@@ -278,14 +232,7 @@ def register():
         elif _get_user_by_username(username):
             error = "Esse usuário já existe."
         else:
-            conn = sqlite3.connect(DB)
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (username, generate_password_hash(password)),
-            )
-            conn.commit()
-            conn.close()
+            storage.create_user(username, generate_password_hash(password))
             return redirect(url_for("login", username=username))
 
     return render_template("register.html", error=error)
@@ -315,11 +262,7 @@ def account():
             if not check_password_hash(user["password_hash"], password):
                 error = "Senha incorreta."
             else:
-                conn = sqlite3.connect(DB)
-                cur = conn.cursor()
-                cur.execute("DELETE FROM users WHERE id = ?", (user["id"],))
-                conn.commit()
-                conn.close()
+                storage.delete_user(user["id"])
                 session.clear()
                 return redirect(url_for("register"))
 
@@ -335,27 +278,19 @@ def account():
                 if existing and existing["id"] != user["id"]:
                     error = "Esse usuário já existe."
                 else:
-                    conn = sqlite3.connect(DB)
-                    cur = conn.cursor()
                     if new_password:
                         if len(new_password) < 6:
                             error = "Senha precisa ter pelo menos 6 caracteres."
                         else:
-                            cur.execute(
-                                "UPDATE users SET username = ?, password_hash = ? WHERE id = ?",
-                                (new_username, generate_password_hash(new_password), user["id"]),
+                            storage.update_user(
+                                user["id"],
+                                username=new_username,
+                                password_hash=generate_password_hash(new_password),
                             )
-                            conn.commit()
-                            conn.close()
                             session["username"] = new_username
                             return redirect(url_for("account"))
                     else:
-                        cur.execute(
-                            "UPDATE users SET username = ? WHERE id = ?",
-                            (new_username, user["id"]),
-                        )
-                        conn.commit()
-                        conn.close()
+                        storage.update_user(user["id"], username=new_username)
                         session["username"] = new_username
                         return redirect(url_for("account"))
 
@@ -498,7 +433,6 @@ def handle_voice(data):
             pass
 
 
-os.makedirs(os.path.dirname(DB), exist_ok=True)
 os.makedirs(VOICES_DIR, exist_ok=True)
 init_db()
 
